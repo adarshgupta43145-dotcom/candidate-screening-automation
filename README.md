@@ -102,7 +102,7 @@ candidate-screening-automation/
 ├── Candidate-Screening-Automation.json
 ├── README.md
 │
-└── screenshots/
+└── screenshots/screenshots
     ├── workflow.png.png
     ├── google-sheet.png.png
     ├── selected-candidate-email.png.png
