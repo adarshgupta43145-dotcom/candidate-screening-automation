@@ -92,7 +92,7 @@ The following information is maintained in Google Sheets:
 
 ### HR Notification Email
 
-![HR Notification Email](screenshots/hr-notification-email.png.png)
+![HR Notification Email](screenshots/screenshots/hr-notification-email.png.png)
 
 ## 📂 Repository Structure
 
