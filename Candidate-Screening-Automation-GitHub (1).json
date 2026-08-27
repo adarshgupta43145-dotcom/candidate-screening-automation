@@ -1,0 +1,1825 @@
+{
+  "name": "Candidate Screening & Interview Scheduling",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "has:attachment",
+          "readStatus": "unread"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "id": "709d680b-8371-46d6-9644-7cf759e41a9b",
+      "name": "Resume Email Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        432
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const bin = $input.item.binary || {};\nconst keys = Object.keys(bin);\nlet chosen = null;\nfor (const k of keys) {\n  const fn = String(bin[k].fileName || '').toLowerCase();\n  if (fn.endsWith('.pdf') || fn.endsWith('.doc') || fn.endsWith('.docx')) { chosen = k; break; }\n}\nconst out = { json: { ...$input.item.json }, binary: {} };\nif (chosen) {\n  const fn = String(bin[chosen].fileName || '');\n  const ext = fn.toLowerCase().split('.').pop();\n  out.json.hasResume = true;\n  out.json.resumeFileName = fn;\n  out.json.resumeExt = ext;\n  out.json.isPdf = ext === 'pdf';\n  out.binary = { resume: bin[chosen] };\n} else {\n  out.json.hasResume = false;\n  out.json.resumeFileName = '';\n  out.json.resumeExt = '';\n  out.json.isPdf = false;\n}\nreturn out;"
+      },
+      "id": "9085425b-5801-4129-8919-1c0f15dd9097",
+      "name": "Extract & Validate Attachment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has",
+              "leftValue": "={{ $json.hasResume }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5e36a742-dbb3-4a6c-9434-752babd45521",
+      "name": "Has Valid Resume?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "resume",
+        "options": {
+          "joinPages": true,
+          "keepSource": "json"
+        }
+      },
+      "id": "1b433475-cd15-4f2c-a739-ac8a0b2476a1",
+      "name": "Parse Resume (PDF)",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        336
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "name",
+              "description": "Full name of the candidate"
+            },
+            {
+              "name": "email",
+              "description": "Primary email address of the candidate"
+            },
+            {
+              "name": "phone",
+              "description": "Phone number of the candidate"
+            },
+            {
+              "name": "skills",
+              "description": "Comma-separated list of the candidate key skills"
+            },
+            {
+              "name": "experience",
+              "description": "Short summary of total years and most recent roles/experience"
+            },
+            {
+              "name": "appliedRole",
+              "description": "Role or position the candidate is applying for, if stated"
+            },
+            {
+              "name": "summary",
+              "description": "A concise 2-3 sentence professional summary of the candidate"
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "You are an expert resume parser. Extract only the requested fields from the resume text. If a value is not present, leave it empty."
+        }
+      },
+      "id": "7ea945ac-bede-424d-b90d-53df6b77562c",
+      "name": "Extract Candidate Details",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        96
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "30f4d6a7-9135-43a9-9309-4731688484a4",
+      "name": "OpenAI Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ex = ($input.item.json.output) || {};\nlet src = {};\ntry { src = $('Extract & Validate Attachment').item.json; } catch (e) { src = {}; }\nconst NP = 'Not Provided';\nconst val = (v) => (v === undefined || v === null || String(v).trim() === '') ? NP : String(v).trim();\nconst now = new Date().toISOString();\nconst id = 'CAND-' + Date.now() + '-' + Math.floor(Math.random() * 1000);\nreturn { json: {\n  'Candidate ID': id,\n  'Name': val(ex.name),\n  'Email': val(ex.email),\n  'Phone': ex.phone ? \"'\" + String(ex.phone).trim() : NP,\n  'Skills': val(ex.skills),\n  'Experience': val(ex.experience),\n  'Applied Role': val(ex.appliedRole),\n  'Resume Summary': val(ex.summary),\n  'Resume File/Link': val(src.resumeFileName),\n  'Status': 'Pending',\n  'Received Date': now,\n  'Processed Date': now,\n  'Candidate Status': 'Pending',\n  'Last Processed Status': '',\n  'Candidate Email Sent': 'No',\n  'HR Notification Sent': 'No'\n} };"
+      },
+      "id": "e4204669-d474-43da-9f92-9add62b253b8",
+      "name": "Normalize Candidate Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a14e88c9-9697-4596-a747-c717893f7137",
+      "name": "Read Existing Candidates",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1552,
+        272
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cand = $('Normalize Candidate Record').first().json;\nlet rows = [];\ntry { rows = $('Read Existing Candidates').all().map(i => i.json).filter(r => r && Object.keys(r).length); } catch (e) { rows = []; }\nconst email = String(cand.Email || '').toLowerCase();\nconst name = String(cand.Name || '').toLowerCase();\nconst phone = String(cand.Phone || '').replace(/\\D/g, '');\nlet dup = false;\nfor (const r of rows) {\n  const re = String(r.Email || '').toLowerCase();\n  if (email && email !== 'not provided' && re && re === email) { dup = true; break; }\n  const rn = String(r.Name || '').toLowerCase();\n  const rp = String(r.Phone || '').replace(/\\D/g, '');\n  if ((!email || email === 'not provided') && name && name !== 'not provided' && rn === name && phone && rp === phone) { dup = true; break; }\n}\nreturn [{ json: { ...cand, isDuplicate: dup } }];"
+      },
+      "id": "70469c03-ceb7-40b7-b172-2ae9eaf401b5",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dup",
+              "leftValue": "={{ $json.isDuplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f5739b31-8b22-4816-8654-f80bb626f882",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2000,
+        272
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "4731b0d5-ac8c-4369-9eec-ec00ce74a35f",
+      "name": "Duplicate Candidate – Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2224,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Pending"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Candidate ID",
+              "displayName": "Candidate ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Experience",
+              "displayName": "Experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Applied Role",
+              "displayName": "Applied Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Resume Summary",
+              "displayName": "Resume Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Resume File/Link",
+              "displayName": "Resume File/Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Received Date",
+              "displayName": "Received Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed Date",
+              "displayName": "Processed Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Candidate Status",
+              "displayName": "Candidate Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Processed Status",
+              "displayName": "Last Processed Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "HR Notification Sent",
+              "displayName": "HR Notification Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "isDuplicate",
+              "displayName": "isDuplicate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Candidate Email Sent",
+              "displayName": "Candidate Email Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "714de283-0cf6-47fe-982d-fd6d5e3712af",
+      "name": "Add Candidate (Status = Pending)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2224,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "bd394e70-5b8f-4295-8e59-9f59a333b0f5",
+      "name": "Unsupported / Corrupted Resume – Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        960,
+        496
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a9783ef1-6ad8-44e6-86f8-3a8a0c03902d",
+      "name": "Extraction Failed – Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1248,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "70982be7-82a7-489c-86fc-450f1486a038",
+      "name": "No Attachment – Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        672,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=0"
+        },
+        "event": "rowUpdate",
+        "options": {
+          "columnsToWatch": [
+            "Status"
+          ]
+        }
+      },
+      "id": "81afd469-83d8-4e93-a98c-b9ea738ad631",
+      "name": "Google Sheets Status Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        1152
+      ],
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $input.item.json;\nconst status = String(r.Status || '').trim();\nconst last = String(r['Last Processed Status'] || '').trim();\nconst allowed = ['Pending', 'Selected', 'On Hold', 'Rejected'];\nconst valid = allowed.includes(status);\nconst changed = valid && status !== last;\nreturn { json: { ...r, _status: status, _valid: valid, _changed: changed } };"
+      },
+      "id": "cca752d8-db74-40bc-b67e-c8bb6d1604dc",
+      "name": "Detect Status Change",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "changed",
+              "leftValue": "={{ $json._changed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "94423ed8-d5ab-46f2-8604-2d94bc8a821d",
+      "name": "Status Changed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        432,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json._status }}",
+                    "rightValue": "Rejected",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "85305d5b-7faa-4695-bacc-3f41f559d66e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Rejected"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json._status }}",
+                    "rightValue": "On Hold",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6a971586-c888-4ca0-894d-781974eef440"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "On Hold"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json._status }}",
+                    "rightValue": "Selected",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ba324422-f59e-46d6-b031-08eb97c532a2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Selected"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "43eb151d-7f3b-4ff5-bd56-db203b1e61aa",
+      "name": "Switch on Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        1088
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "<__PLACEHOLDER_VALUE__Hiring sender email, e.g. your-email@example.com__>",
+        "toEmail": "={{ $('Detect Status Change').item.json.Email }}",
+        "subject": "Update on Your Application",
+        "html": "=<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.6;max-width:650px;margin:auto;\">\n\n  <p>Dear {{ $('Detect Status Change').item.json.Name }},</p>\n\n  <p>\n    Thank you for taking the time to apply\n    {{ $('Detect Status Change').item.json['Applied Role'] && $('Detect Status Change').item.json['Applied Role'] !== 'Not Provided' ? ' for the ' + $('Detect Status Change').item.json['Applied Role'] + ' role' : '' }}\n    and for your interest in joining our team.\n  </p>\n\n  <p>\n    After careful consideration, we regret to inform you that we will not be moving forward with your application at this time. We received many strong applications, and the selection process was highly competitive.\n  </p>\n\n  <p>\n    We sincerely appreciate the time and effort you invested in your application. We encourage you to apply for future opportunities that align with your skills and experience.\n  </p>\n\n  <p>\n    We wish you the very best in your career and future endeavours. Better luck next time!\n  </p>\n\n  <br>\n\n  <p>\n    Warm regards,<br/>\n    <strong>The Hiring Team</strong>\n  </p>\n\n  <hr style=\"border:none;border-top:1px solid #ddd;margin-top:25px;\">\n\n  <p style=\"font-size:12px;color:#777;\">\n    This is an automated communication. Please do not reply directly to this email.\n  </p>\n\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4fe34f54-1f67-405a-a6ba-187ed6a9f0bf",
+      "name": "Send Rejection Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        912
+      ],
+      "webhookId": "49447200-8d54-4fae-98f6-2b02c15f55fc",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Detect Status Change').item.json.row_number }}",
+            "Last Processed Status": "Rejected",
+            "Processed Date": "={{ $now.toISO() }}",
+            "Candidate Status": "Rejected",
+            "Candidate Email Sent": "Yes"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Candidate ID",
+              "displayName": "Candidate ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Experience",
+              "displayName": "Experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Applied Role",
+              "displayName": "Applied Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume Summary",
+              "displayName": "Resume Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume File/Link",
+              "displayName": "Resume File/Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Received Date",
+              "displayName": "Received Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Processed Date",
+              "displayName": "Processed Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Candidate Status",
+              "displayName": "Candidate Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Processed Status",
+              "displayName": "Last Processed Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "HR Notification Sent",
+              "displayName": "HR Notification Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "isDuplicate",
+              "displayName": "isDuplicate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Candidate Email Sent",
+              "displayName": "Candidate Email Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "ce9ad1a5-7528-4cc7-9f50-5bb2f5d7b97c",
+      "name": "Mark Rejected Processed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1104,
+        912
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Detect Status Change').item.json.row_number }}",
+            "Processed Date": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Candidate ID",
+              "displayName": "Candidate ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Experience",
+              "displayName": "Experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Applied Role",
+              "displayName": "Applied Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume Summary",
+              "displayName": "Resume Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume File/Link",
+              "displayName": "Resume File/Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Received Date",
+              "displayName": "Received Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Processed Date",
+              "displayName": "Processed Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Candidate Status",
+              "displayName": "Candidate Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Last Processed Status",
+              "displayName": "Last Processed Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "HR Notification Sent",
+              "displayName": "HR Notification Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "isDuplicate",
+              "displayName": "isDuplicate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "d2808daa-5742-416c-a36b-56469b6af7f1",
+      "name": "Mark On Hold Processed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        1104
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "<__PLACEHOLDER_VALUE__Hiring sender email, e.g. your-email@example.com__>",
+        "toEmail": "={{ $('Detect Status Change').item.json.Email }}",
+        "subject": "Congratulations – Selected for the Next Round",
+        "html": "=<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.6;max-width:650px;margin:auto;\">\n\n  <div style=\"padding-bottom:15px;border-bottom:2px solid #ddd;\">\n    <h2 style=\"margin:0;\">Congratulations!</h2>\n  </div>\n\n  <br>\n\n  <p>Dear {{ $('Detect Status Change').item.json.Name }},</p>\n\n  <p>\n    We are delighted to inform you that you have been\n    <strong>selected for the next round</strong>\n    {{ $('Detect Status Change').item.json['Applied Role'] && $('Detect Status Change').item.json['Applied Role'] !== 'Not Provided' ? ' of our hiring process for the ' + $('Detect Status Change').item.json['Applied Role'] + ' role' : '' }}.\n  </p>\n\n  <p>\n    Thank you for the time and effort you have invested in the application process. We were impressed with your profile and look forward to learning more about you in the next stage.\n  </p>\n\n  <p><strong>What happens next?</strong></p>\n\n  <ul>\n    <li>Our HR team will contact you to schedule the second-round interview.</li>\n    <li>Please review the role requirements and prepare any relevant work samples or portfolio.</li>\n    <li>Please keep the required documents ready for the next stage.</li>\n  </ul>\n\n  <p><strong>Documents to keep ready:</strong></p>\n\n  <ul>\n    <li>Updated Resume</li>\n    <li>Government-issued ID</li>\n    <li>Educational certificates or documents</li>\n    <li>Relevant work samples, portfolio, or certifications, if applicable</li>\n  </ul>\n\n  <p>\n    Further interview and documentation details will be shared with you by our team.\n  </p>\n\n  <p>\n    If you have any questions, please feel free to reply to this email.\n  </p>\n\n  <br>\n\n  <p>\n    Best regards,<br/>\n    <strong>The Hiring Team</strong>\n  </p>\n\n  <hr style=\"border:none;border-top:1px solid #ddd;margin-top:25px;\">\n\n  <p style=\"font-size:12px;color:#777;\">\n    This is an automated communication from the recruitment team.\n  </p>\n\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "463ba40e-061b-4a91-906b-07d0ed97d410",
+      "name": "Send Selection Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        1296
+      ],
+      "webhookId": "8cdf7dc1-ed9c-440d-871f-03dbab004ee0",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-email@example.com",
+        "toEmail": "your-email@example.com",
+        "subject": "Candidate Selected – Schedule Next Round",
+        "html": "=<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.6;max-width:700px;margin:auto;\">\n\n  <div style=\"padding:15px 20px;border-bottom:2px solid #ddd;\">\n    <h2 style=\"margin:0;\">Candidate Selected for Second Round</h2>\n  </div>\n\n  <div style=\"padding:20px;\">\n\n    <p>Hi HR Team,</p>\n\n    <p>\n      A candidate has successfully cleared the initial screening and has been\n      <strong>selected for the next round</strong>.\n    </p>\n\n    <h3>Candidate Summary</h3>\n\n    <table style=\"border-collapse:collapse;width:100%;border:1px solid #ddd;\">\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;width:35%;\"><strong>Name</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json.Name }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Email</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json.Email }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Phone</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json.Phone }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Applied Role</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json['Applied Role'] }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Skills</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json.Skills }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Experience</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json.Experience }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Resume Summary</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">{{ $('Detect Status Change').item.json['Resume Summary'] }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding:10px;border:1px solid #ddd;\"><strong>Resume</strong></td>\n        <td style=\"padding:10px;border:1px solid #ddd;\">\n          {{ $('Detect Status Change').item.json['Resume File/Link'] }}\n        </td>\n      </tr>\n\n    </table>\n\n    <br>\n\n    <div style=\"padding:15px;border:1px solid #ddd;\">\n      <strong>Action Required:</strong><br>\n      Please review the candidate profile and schedule or send an invitation\n      for the <strong>second-round interview</strong>.\n    </div>\n\n    <br>\n\n    <p>\n      Regards,<br>\n      <strong>Recruitment Automation</strong>\n    </p>\n\n  </div>\n\n  <div style=\"padding:12px;text-align:center;font-size:12px;color:#777;border-top:1px solid #ddd;\">\n    Automated candidate screening notification\n  </div>\n\n</div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0d4cd61d-9c72-40db-9a8d-d78fedd94f06",
+      "name": "Send HR Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1104,
+        1296
+      ],
+      "webhookId": "8c9fb63f-1702-46c4-ba02-b0daf0425bc2",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Detect Status Change').item.json.row_number }}",
+            "Last Processed Status": "Selected",
+            "HR Notification Sent": "Yes",
+            "Processed Date": "={{ $now.toISO() }}",
+            "Candidate Status": "Selected",
+            "Candidate Email Sent": "Yes"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Candidate ID",
+              "displayName": "Candidate ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Experience",
+              "displayName": "Experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Applied Role",
+              "displayName": "Applied Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume Summary",
+              "displayName": "Resume Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Resume File/Link",
+              "displayName": "Resume File/Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Received Date",
+              "displayName": "Received Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Processed Date",
+              "displayName": "Processed Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Candidate Status",
+              "displayName": "Candidate Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Processed Status",
+              "displayName": "Last Processed Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "HR Notification Sent",
+              "displayName": "HR Notification Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "isDuplicate",
+              "displayName": "isDuplicate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Candidate Email Sent",
+              "displayName": "Candidate Email Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "8097a6db-1d37-4888-983c-133c0b037c70",
+      "name": "Mark Selected Processed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1328,
+        1296
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "4ae2b832-a21f-4000-91c0-cad135db90ae",
+      "name": "No Change / Invalid Status – Skipped",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        656,
+        1312
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Candidate Screening and Interview Scheduling. Branch A - Resume Intake: Gmail (has:attachment) then validate PDF/DOC/DOCX, extract text, AI parse, dedupe, append as Pending. Branch B - Status Automation: Sheets Status change routes to Rejected (candidate email), On Hold (nothing), or Selected (candidate plus HR email), then marks the row processed. Tracking columns prevent duplicate emails. PDFs parse fully; DOC/DOCX are detected and routed to graceful error handling.",
+        "height": 320,
+        "width": 460,
+        "color": 2
+      },
+      "id": "e1a971ed-4ff8-488b-8889-de158fb1d7a7",
+      "name": "How it works",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "source": "googleSheets",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Candidate Screening Sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=0"
+        }
+      },
+      "type": "n8n-nodes-base.evaluationTrigger",
+      "typeVersion": 4.7,
+      "position": [
+        -48,
+        144
+      ],
+      "id": "a850188e-0be2-4e9c-9ce3-cf6091a5f5d7",
+      "name": "When fetching a dataset row",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Resume Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract & Validate Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Validate Attachment": {
+      "main": [
+        [
+          {
+            "node": "Has Valid Resume?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Valid Resume?": {
+      "main": [
+        [
+          {
+            "node": "Parse Resume (PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Attachment – Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Resume (PDF)": {
+      "main": [
+        [
+          {
+            "node": "Extract Candidate Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported / Corrupted Resume – Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Candidate Details": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidate Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraction Failed – Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Candidate Details",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidate Record": {
+      "main": [
+        [
+          {
+            "node": "Read Existing Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Existing Candidates": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Candidate – Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Candidate (Status = Pending)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Status Trigger": {
+      "main": [
+        [
+          {
+            "node": "Detect Status Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Status Change": {
+      "main": [
+        [
+          {
+            "node": "Status Changed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Changed?": {
+      "main": [
+        [
+          {
+            "node": "Switch on Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Change / Invalid Status – Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch on Status": {
+      "main": [
+        [
+          {
+            "node": "Send Rejection Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark On Hold Processed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Selection Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Rejection Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Rejected Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Selection Email": {
+      "main": [
+        [
+          {
+            "node": "Send HR Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send HR Notification": {
+      "main": [
+        [
+          {
+            "node": "Mark Selected Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Kolkata",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "9d164a6a-69d1-49bd-b97a-fce327fc2dc3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d865e72fbb18ee8b9dfd7cdc9b9be84b720eb57fb9f889285190f2a26d39fd98"
+  },
+  "nodeGroups": [
+    {
+      "id": "80dee7bf-644d-4e0f-b3fb-b8a6d338baa8",
+      "name": "Resume Intake & Parsing",
+      "nodeIds": [
+        "9085425b-5801-4129-8919-1c0f15dd9097",
+        "5e36a742-dbb3-4a6c-9434-752babd45521",
+        "70982be7-82a7-489c-86fc-450f1486a038",
+        "1b433475-cd15-4f2c-a739-ac8a0b2476a1",
+        "bd394e70-5b8f-4295-8e59-9f59a333b0f5",
+        "7ea945ac-bede-424d-b90d-53df6b77562c",
+        "30f4d6a7-9135-43a9-9309-4731688484a4",
+        "a9783ef1-6ad8-44e6-86f8-3a8a0c03902d",
+        "e4204669-d474-43da-9f92-9add62b253b8"
+      ],
+      "description": "Detects resume attachments, extracts text, and uses AI to parse candidate fields."
+    },
+    {
+      "id": "dd22dd6e-366e-4c3b-b7e3-1ea191b12d15",
+      "name": "Duplicate Check & Storage",
+      "nodeIds": [
+        "a14e88c9-9697-4596-a747-c717893f7137",
+        "70469c03-ceb7-40b7-b172-2ae9eaf401b5",
+        "f5739b31-8b22-4816-8654-f80bb626f882",
+        "4731b0d5-ac8c-4369-9eec-ec00ce74a35f",
+        "714de283-0cf6-47fe-982d-fd6d5e3712af"
+      ],
+      "description": "Prevents duplicate records (email, else name+phone) and appends new candidates as Pending."
+    },
+    {
+      "id": "810d5299-45c2-4ab5-8b03-26ab0bb86d9c",
+      "name": "Status Routing & Notifications",
+      "nodeIds": [
+        "cca752d8-db74-40bc-b67e-c8bb6d1604dc",
+        "94423ed8-d5ab-46f2-8604-2d94bc8a821d",
+        "4ae2b832-a21f-4000-91c0-cad135db90ae",
+        "43eb151d-7f3b-4ff5-bd56-db203b1e61aa",
+        "4fe34f54-1f67-405a-a6ba-187ed6a9f0bf",
+        "463ba40e-061b-4a91-906b-07d0ed97d410",
+        "0d4cd61d-9c72-40db-9a8d-d78fedd94f06",
+        "ce9ad1a5-7528-4cc7-9f50-5bb2f5d7b97c",
+        "d2808daa-5742-416c-a36b-56469b6af7f1",
+        "8097a6db-1d37-4888-983c-133c0b037c70"
+      ],
+      "description": "On status change, emails the candidate/HR and marks the row processed so emails never repeat."
+    }
+  ],
+  "id": "9vlc7BMG1hKg4F6B",
+  "tags": []
+}
