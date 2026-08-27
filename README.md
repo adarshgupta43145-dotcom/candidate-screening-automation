@@ -76,19 +76,19 @@ The following information is maintained in Google Sheets:
 
 ### Complete n8n Workflow
 
-![Complete Workflow](screenshots/workflow.png.png)
+![Complete Workflow](screenshots/screenshots/workflow.png.png)
 
 ### Google Sheet
 
-![Google Sheet](screenshots/google-sheet.png.png)
+![Google Sheet](screenshots/screenshots/google-sheet.png.png)
 
 ### Selected Candidate Email
 
-![Selected Candidate Email](screenshots/selected-candidate-email.png.png)
+![Selected Candidate Email](screenshots/screenshots/selected-candidate-email.png.png)
 
 ### Rejected Candidate Email
 
-![Rejected Candidate Email](screenshots/rejected-candidate-email.png.png)
+![Rejected Candidate Email](screenshots/screenshots/rejected-candidate-email.png.png)
 
 ### HR Notification Email
 
