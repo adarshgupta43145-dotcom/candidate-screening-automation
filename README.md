@@ -1,5 +1,3 @@
-# candidate-screening-automation
-Candidate Screening and Interview Scheduling Automation using n8n, Google Sheets, and Email Automation
 # Candidate Screening & Interview Scheduling Automation
 
 An automated candidate screening and interview scheduling workflow built using **n8n, Google Sheets, Gmail, and OpenAI**.
@@ -9,6 +7,43 @@ An automated candidate screening and interview scheduling workflow built using *
 This project automates the candidate recruitment process from resume submission to candidate status updates and email notifications.
 
 The workflow processes incoming resumes, extracts candidate information, stores the data in Google Sheets, checks for duplicate candidates, and automatically sends notifications based on the candidate's selection status.
+
+## 🔐 Account & Credentials Setup
+
+Before running the workflow, connect the required accounts and credentials in n8n.
+
+### 1. Gmail Account
+
+1. Open n8n and go to **Credentials**.
+2. Create a new **Gmail OAuth2** credential.
+3. Sign in with the Gmail account that will receive candidate resumes and send automated emails.
+4. Grant the required permissions.
+5. Select this credential in the Gmail Trigger and Gmail email nodes.
+
+### 2. Google Sheets Account
+
+1. Go to **Credentials** in n8n.
+2. Create a new **Google Sheets OAuth2** credential.
+3. Sign in with the Google account that contains the candidate tracking sheet.
+4. Grant Google Sheets access.
+5. Select this credential in the Google Sheets nodes.
+6. Update the Spreadsheet and Sheet references if required.
+
+### 3. OpenAI Account
+
+1. Create an OpenAI API credential in n8n.
+2. Add your OpenAI API key.
+3. Select the credential in the AI/OpenAI node used for candidate information extraction.
+
+## ⚙️ Workflow Setup
+
+1. Import the workflow JSON file into n8n.
+2. Configure the Gmail credentials.
+3. Configure the Google Sheets credentials.
+4. Configure the OpenAI API credentials.
+5. Update the Google Sheet references if required.
+6. Activate or publish the workflow.
+7. Send a resume to the configured Gmail account to test the automation.
 
 ## 🚀 Features
 
